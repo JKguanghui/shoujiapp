@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.EnglishCoach" parent="Theme.MaterialComponents.Light.DarkActionBar">
+        <item name="colorPrimary">#1E88E5</item>
+        <item name="colorPrimaryVariant">#1565C0</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#FF6F00</item>
+    </style>
+</resources>
