@@ -16,7 +16,6 @@ import okhttp3.ResponseBody;
 public class ModelDownloadManager {
 
     private static final String MODEL_URL = "https://huggingface.co/HuggingFaceTB/SmolLM-135M-Instruct-GGUF/resolve/main/smollm-135m-instruct-q8_0.gguf";
-
     private static final String TAG = "DownloadManager";
     private static final String MODEL_DIR = "models";
     private static final String MODEL_FILENAME = "smollm-135m.gguf";
@@ -63,18 +62,15 @@ public class ModelDownloadManager {
             try {
                 Request request = new Request.Builder().url(MODEL_URL).build();
                 Response response = client.newCall(request).execute();
-
                 if (!response.isSuccessful()) {
                     callback.onError("server error " + response.code());
                     return;
                 }
-
                 ResponseBody body = response.body();
                 if (body == null) {
                     callback.onError("empty response body");
                     return;
                 }
-
                 long contentLength = body.contentLength();
                 is = body.byteStream();
                 fos = new FileOutputStream(modelFile);
