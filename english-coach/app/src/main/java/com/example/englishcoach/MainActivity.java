@@ -37,35 +37,16 @@ public class MainActivity extends AppCompatActivity {
         btnCall = findViewById(R.id.btnCall);
         progressBar = findViewById(R.id.progressBar);
 
-        // 检查模型是否存在
-        File modelDir = new File(getFilesDir(), "models");
-        File modelFile = new File(modelDir, "smollm-135m.gguf");
-        if (modelFile.exists()) {
-            modelReady = true;
-            statusText.setText(R.string.model_ready);
-            btnCall.setVisibility(Button.VISIBLE);
-        } else {
-            statusText.setText("需要下载模型资源 (约500MB)");
-            btnDownload.setVisibility(Button.VISIBLE);
-        }
-
         downloadManager = new ModelDownloadManager(this);
+        checkModelState();
 
-        btnDownload.setOnClickListener(v -> {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) == PackageManager.PERMISSION_GRANTED) {
-                startDownload();
-            } else {
-                // 实际上INTERNET权限无需动态申请，但可申请存储权限（如果需要外部存储）
-                startDownload();
-            }
-        });
+        btnDownload.setOnClickListener(v -> startDownload());
 
         btnCall.setOnClickListener(v -> {
             if (!modelReady) {
-                Toast.makeText(this, "请先下载模型", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "please download model first", Toast.LENGTH_SHORT).show();
                 return;
             }
-            // 检查录音权限
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
             } else {
@@ -74,54 +55,73 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void checkModelState() {
+        File modelFile = ModelDownloadManager.getModelFile(this);
+        if (modelFile.exists() && modelFile.length() > 0) {
+            modelReady = true;
+            long sizeMB = modelFile.length() / (1024 * 1024);
+            statusText.setText("Model ready (" + sizeMB + "MB)");
+            btnDownload.setVisibility(Button.GONE);
+            btnCall.setVisibility(Button.VISIBLE);
+        } else {
+            modelReady = false;
+            statusText.setText("Need to download model (~500MB)");
+            btnDownload.setVisibility(Button.VISIBLE);
+            btnCall.setVisibility(Button.GONE);
+        }
+    }
+
     private void startDownload() {
         btnDownload.setEnabled(false);
         progressBar.setVisibility(ProgressBar.VISIBLE);
+        progressBar.setProgress(0);
         statusText.setText(R.string.downloading);
 
         downloadManager.downloadModel(new ModelDownloadManager.DownloadCallback() {
             @Override
             public void onProgress(int progress) {
-                progressBar.setProgress(progress);
+                runOnUiThread(() -> progressBar.setProgress(progress));
             }
 
             @Override
             public void onSuccess() {
-                modelReady = true;
-                progressBar.setVisibility(ProgressBar.GONE);
-                statusText.setText(R.string.model_ready);
-                btnDownload.setVisibility(Button.GONE);
-                btnCall.setVisibility(Button.VISIBLE);
-                Toast.makeText(MainActivity.this, "模型下载完成", Toast.LENGTH_SHORT).show();
+                runOnUiThread(() -> {
+                    modelReady = true;
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    btnDownload.setVisibility(Button.GONE);
+                    btnCall.setVisibility(Button.VISIBLE);
+                    File modelFile = ModelDownloadManager.getModelFile(MainActivity.this);
+                    long sizeMB = modelFile.length() / (1024 * 1024);
+                    statusText.setText("Model ready (" + sizeMB + "MB)");
+                    Toast.makeText(MainActivity.this, "Model downloaded", Toast.LENGTH_SHORT).show();
+                });
             }
 
             @Override
             public void onError(String error) {
-                progressBar.setVisibility(ProgressBar.GONE);
-                btnDownload.setEnabled(true);
-                statusText.setText("下载失败: " + error);
-                Toast.makeText(MainActivity.this, "下载出错，请重试", Toast.LENGTH_LONG).show();
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    btnDownload.setEnabled(true);
+                    statusText.setText("Download failed: " + error);
+                    Toast.makeText(MainActivity.this, "Download error, retry", Toast.LENGTH_LONG).show();
+                });
             }
         });
     }
 
     private void toggleCall() {
         if (isCallActive) {
-            // 结束通话
             isCallActive = false;
             btnCall.setText(R.string.start_call);
             subtitleText.setText("");
             stopMockAudio();
         } else {
-            // 开始通话
             isCallActive = true;
             btnCall.setText(R.string.end_call);
-            // 模拟实时字幕和纠错演示
             startMockConversation();
         }
     }
 
-    // 模拟一段对话，展示字幕和纠错效果（实际接入Vosk后会替换）
     private void startMockConversation() {
         String[] userPhrases = {"He go to school everyday.", "She don't like coffee."};
         String[] corrections = {"He goes to school every day.", "She doesn't like coffee."};
@@ -132,7 +132,7 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 if (!isCallActive || idx[0] >= userPhrases.length) {
                     if (isCallActive) {
-                        subtitleText.setText("通话结束，查看纠错历史");
+                        subtitleText.setText("Call ended");
                         isCallActive = false;
                         btnCall.setText(R.string.start_call);
                     }
@@ -140,8 +140,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 String userText = userPhrases[idx[0]];
                 String correct = corrections[idx[0]];
-                subtitleText.setText("你说：" + userText + "\n建议：" + correct);
-                // 模拟停顿后下一句
+                subtitleText.setText("You: " + userText + "\nSuggestion: " + correct);
                 handler.postDelayed(this, 3000);
                 idx[0]++;
             }
@@ -160,7 +159,7 @@ public class MainActivity extends AppCompatActivity {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 toggleCall();
             } else {
-                Toast.makeText(this, "需要录音权限才能通话", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Need audio permission", Toast.LENGTH_SHORT).show();
             }
         }
     }
