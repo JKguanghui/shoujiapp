@@ -1,7 +1,6 @@
 package com.example.englishcoach;
 
 import android.content.Context;
-import android.os.Environment;
 import android.util.Log;
 
 import java.io.File;
@@ -12,11 +11,16 @@ import java.io.InputStream;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 public class ModelDownloadManager {
 
-    // 请替换为你真实的模型文件直链（例如 GitHub Releases 的下载地址）
-    private static final String MODEL_URL = "https://github.com/yourusername/english-coach/releases/download/v1.0/smollm-135m.gguf";
+    private static final String MODEL_URL = "https://huggingface.co/HuggingFaceTB/SmolLM-135M-Instruct-GGUF/resolve/main/smollm-135m-instruct-q8_0.gguf";
+
+    private static final String TAG = "DownloadManager";
+    private static final String MODEL_DIR = "models";
+    private static final String MODEL_FILENAME = "smollm-135m.gguf";
+
     private Context context;
     private OkHttpClient client;
 
@@ -33,24 +37,48 @@ public class ModelDownloadManager {
                 .build();
     }
 
+    public static File getModelFile(Context context) {
+        File modelDir = new File(context.getFilesDir(), MODEL_DIR);
+        return new File(modelDir, MODEL_FILENAME);
+    }
+
+    public static boolean isModelReady(Context context) {
+        File modelFile = getModelFile(context);
+        return modelFile.exists() && modelFile.length() > 0;
+    }
+
     public void downloadModel(DownloadCallback callback) {
         new Thread(() -> {
-            try {
-                File modelDir = new File(context.getFilesDir(), "models");
-                if (!modelDir.exists()) modelDir.mkdirs();
-                File modelFile = new File(modelDir, "smollm-135m.gguf");
+            File modelDir = new File(context.getFilesDir(), MODEL_DIR);
+            if (!modelDir.exists()) modelDir.mkdirs();
+            File modelFile = new File(modelDir, MODEL_FILENAME);
 
+            if (modelFile.exists() && modelFile.length() > 0) {
+                callback.onSuccess();
+                return;
+            }
+
+            InputStream is = null;
+            FileOutputStream fos = null;
+            try {
                 Request request = new Request.Builder().url(MODEL_URL).build();
                 Response response = client.newCall(request).execute();
+
                 if (!response.isSuccessful()) {
-                    callback.onError("服务器响应错误 " + response.code());
+                    callback.onError("server error " + response.code());
                     return;
                 }
 
-                long contentLength = response.body().contentLength();
-                InputStream is = response.body().byteStream();
-                FileOutputStream fos = new FileOutputStream(modelFile);
-                byte[] buffer = new byte[4096];
+                ResponseBody body = response.body();
+                if (body == null) {
+                    callback.onError("empty response body");
+                    return;
+                }
+
+                long contentLength = body.contentLength();
+                is = body.byteStream();
+                fos = new FileOutputStream(modelFile);
+                byte[] buffer = new byte[8192];
                 long downloaded = 0;
                 int len;
                 while ((len = is.read(buffer)) != -1) {
@@ -60,12 +88,14 @@ public class ModelDownloadManager {
                     callback.onProgress(progress);
                 }
                 fos.flush();
-                fos.close();
-                is.close();
                 callback.onSuccess();
             } catch (IOException e) {
-                Log.e("DownloadManager", "下载失败", e);
+                Log.e(TAG, "download failed", e);
+                if (modelFile.exists()) modelFile.delete();
                 callback.onError(e.getMessage());
+            } finally {
+                try { if (is != null) is.close(); } catch (IOException ignored) {}
+                try { if (fos != null) fos.close(); } catch (IOException ignored) {}
             }
         }).start();
     }
