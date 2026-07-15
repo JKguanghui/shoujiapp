@@ -1,29 +1,52 @@
 package com.example.englishcoach;
 
 import android.Manifest;
+import android.content.DialogInterface;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
 import android.widget.Button;
-import android.widget.TextView;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
+
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
 import java.io.File;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity
+        implements VoskManager.VoskCallback, TTSManager.TTSListener {
 
-    private static final int REQUEST_AUDIO = 100;
-    private TextView statusText, subtitleText;
-    private Button btnDownload, btnCall;
+    private static final int REQ_AUDIO = 100;
+    private static final String PREF_NAME = "english_coach_prefs";
+    private static final String KEY_AGREED = "is_agreed";
+
+    // UI
+    private TextView tvStatus, tvUserSubtitle, tvAiSubtitle, tvDisclaimer;
+    private Button btnStart, btnDownload;
     private ProgressBar progressBar;
+    private ScrollView scrollAi;
+
+    // Managers
+    private VoskManager voskManager;
+    private TTSManager ttsManager;
+    private LLMEngine llmEngine;
     private ModelDownloadManager downloadManager;
+
+    // State
     private boolean modelReady = false;
-    private boolean isCallActive = false;
+    private boolean callActive = false;
+    private boolean aiSpeaking = false;
+    private final AtomicBoolean llmBusy = new AtomicBoolean(false);
     private Handler handler = new Handler(Looper.getMainLooper());
 
     @Override
@@ -31,136 +54,185 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        statusText = findViewById(R.id.statusText);
-        subtitleText = findViewById(R.id.subtitleText);
-        btnDownload = findViewById(R.id.btnDownload);
-        btnCall = findViewById(R.id.btnCall);
-        progressBar = findViewById(R.id.progressBar);
+        // Check agreement
+        SharedPreferences prefs = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
+        if (!prefs.getBoolean(KEY_AGREED, false)) {
+            showAgreementDialog(prefs);
+        }
 
-        downloadManager = new ModelDownloadManager(this);
+        initViews();
+        initManagers();
         checkModelState();
+    }
 
-        btnDownload.setOnClickListener(v -> startDownload());
+    private void showAgreementDialog(SharedPreferences prefs) {
+        new AlertDialog.Builder(this)
+            .setTitle("User Agreement & Disclaimer")
+            .setMessage(getString(R.string.agreement_text))
+            .setCancelable(false)
+            .setPositiveButton("Agree", (d, w) -> prefs.edit().putBoolean(KEY_AGREED, true).apply())
+            .setNegativeButton("Exit", (d, w) -> finish())
+            .show();
+    }
 
-        btnCall.setOnClickListener(v -> {
-            if (!modelReady) {
-                Toast.makeText(this, "please download model first", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_AUDIO);
-            } else {
-                toggleCall();
-            }
-        });
+    private void initViews() {
+        tvStatus = findViewById(R.id.tvStatus);
+        tvUserSubtitle = findViewById(R.id.tvUserSubtitle);
+        tvAiSubtitle = findViewById(R.id.tvAiSubtitle);
+        tvDisclaimer = findViewById(R.id.tvDisclaimer);
+        btnStart = findViewById(R.id.btnStart);
+        btnDownload = findViewById(R.id.btnDownload);
+        progressBar = findViewById(R.id.progressBar);
+        scrollAi = findViewById(R.id.scrollAi);
+
+        btnDownload.setOnClickListener(v -> startDownloads());
+        btnStart.setOnClickListener(v -> toggleCall());
+    }
+
+    private void initManagers() {
+        downloadManager = new ModelDownloadManager(this);
+        voskManager = new VoskManager(this);
+        ttsManager = new TTSManager(this, this);
+        llmEngine = new LLMEngine(this);
     }
 
     private void checkModelState() {
-        File modelFile = ModelDownloadManager.getModelFile(this);
-        if (modelFile.exists() && modelFile.length() > 0) {
+        boolean qwen = ModelDownloadManager.isQwenReady(this);
+        boolean vosk = ModelDownloadManager.isVoskReady(this);
+        if (qwen && vosk) {
             modelReady = true;
-            long sizeMB = modelFile.length() / (1024 * 1024);
-            statusText.setText("Model ready (" + sizeMB + "MB)");
-            btnDownload.setVisibility(Button.GONE);
-            btnCall.setVisibility(Button.VISIBLE);
+            tvStatus.setText("Ready - tap to start");
+            btnDownload.setVisibility(View.GONE);
+            btnStart.setVisibility(View.VISIBLE);
+            new Thread(() -> {
+                boolean ok = llmEngine.loadModel();
+                handler.post(() -> {
+                    if (!ok) tvStatus.setText("Model load failed");
+                });
+            }).start();
+            voskManager.init(this);
         } else {
             modelReady = false;
-            statusText.setText("Need to download model (~500MB)");
-            btnDownload.setVisibility(Button.VISIBLE);
-            btnCall.setVisibility(Button.GONE);
+            tvStatus.setText("Download required models first");
+            btnDownload.setVisibility(View.VISIBLE);
+            btnStart.setVisibility(View.GONE);
         }
     }
 
-    private void startDownload() {
+    private void startDownloads() {
         btnDownload.setEnabled(false);
-        progressBar.setVisibility(ProgressBar.VISIBLE);
+        progressBar.setVisibility(View.VISIBLE);
         progressBar.setProgress(0);
-        statusText.setText(R.string.downloading);
 
-        downloadManager.downloadModel(new ModelDownloadManager.DownloadCallback() {
-            @Override
-            public void onProgress(int progress) {
-                runOnUiThread(() -> progressBar.setProgress(progress));
-            }
-
-            @Override
-            public void onSuccess() {
-                runOnUiThread(() -> {
-                    modelReady = true;
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    btnDownload.setVisibility(Button.GONE);
-                    btnCall.setVisibility(Button.VISIBLE);
-                    File modelFile = ModelDownloadManager.getModelFile(MainActivity.this);
-                    long sizeMB = modelFile.length() / (1024 * 1024);
-                    statusText.setText("Model ready (" + sizeMB + "MB)");
-                    Toast.makeText(MainActivity.this, "Model downloaded", Toast.LENGTH_SHORT).show();
+        // Step 1: download Vosk
+        tvStatus.setText("Downloading speech model...");
+        downloadManager.downloadVoskModel(new ModelDownloadManager.DownloadCallback() {
+            public void onProgress(int p, long d, long t) { handler.post(() -> progressBar.setProgress(p / 2)); }
+            public void onSuccess(File f) {
+                handler.post(() -> {
+                    tvStatus.setText("Downloading AI model...");
+                    progressBar.setProgress(0);
+                });
+                // Step 2: download Qwen
+                downloadManager.downloadQwenModel(new ModelDownloadManager.DownloadCallback() {
+                    public void onProgress(int p, long d, long t) { handler.post(() -> progressBar.setProgress(50 + p / 2)); }
+                    public void onSuccess(File f2) {
+                        handler.post(() -> {
+                            modelReady = true;
+                            progressBar.setVisibility(View.GONE);
+                            tvStatus.setText("Ready - tap to start");
+                            btnDownload.setVisibility(View.GONE);
+                            btnStart.setVisibility(View.VISIBLE);
+                        });
+                        new Thread(() -> llmEngine.loadModel()).start();
+                        voskManager.init(MainActivity.this);
+                    }
+                    public void onError(String e) { handler.post(() -> { tvStatus.setText("Download failed: " + e); btnDownload.setEnabled(true); }); }
+                    public void onStatusUpdate(String s) { handler.post(() -> tvStatus.setText(s)); }
                 });
             }
-
-            @Override
-            public void onError(String error) {
-                runOnUiThread(() -> {
-                    progressBar.setVisibility(ProgressBar.GONE);
-                    btnDownload.setEnabled(true);
-                    statusText.setText("Download failed: " + error);
-                    Toast.makeText(MainActivity.this, "Download error, retry", Toast.LENGTH_LONG).show();
-                });
-            }
+            public void onError(String e) { handler.post(() -> { tvStatus.setText("Download failed: " + e); btnDownload.setEnabled(true); }); }
+            public void onStatusUpdate(String s) { handler.post(() -> tvStatus.setText(s)); }
         });
     }
 
     private void toggleCall() {
-        if (isCallActive) {
-            isCallActive = false;
-            btnCall.setText(R.string.start_call);
-            subtitleText.setText("");
-            stopMockAudio();
-        } else {
-            isCallActive = true;
-            btnCall.setText(R.string.end_call);
-            startMockConversation();
+        if (!modelReady) { Toast.makeText(this, "Please wait for models", Toast.LENGTH_SHORT).show(); return; }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO);
+            return;
         }
+        if (callActive) { stopCall(); } else { startCall(); }
     }
 
-    private void startMockConversation() {
-        String[] userPhrases = {"He go to school everyday.", "She don't like coffee."};
-        String[] corrections = {"He goes to school every day.", "She doesn't like coffee."};
-        final int[] idx = {0};
+    private void startCall() {
+        callActive = true;
+        btnStart.setText("End Call");
+        tvUserSubtitle.setText("");
+        tvAiSubtitle.setText("");
+        voskManager.startListening();
+        appendAiSubtitle("Hi! I'm your English tutor. What would you like to practice today?\n");
+        ttsManager.speak("Hi! I'm your English tutor. What would you like to practice today?");
+    }
 
-        Runnable phraseTask = new Runnable() {
-            @Override
-            public void run() {
-                if (!isCallActive || idx[0] >= userPhrases.length) {
-                    if (isCallActive) {
-                        subtitleText.setText("Call ended");
-                        isCallActive = false;
-                        btnCall.setText(R.string.start_call);
-                    }
-                    return;
-                }
-                String userText = userPhrases[idx[0]];
-                String correct = corrections[idx[0]];
-                subtitleText.setText("You: " + userText + "\nSuggestion: " + correct);
-                handler.postDelayed(this, 3000);
-                idx[0]++;
+    private void stopCall() {
+        callActive = false;
+        btnStart.setText("Start Call");
+        voskManager.stopListening();
+        ttsManager.stop();
+        aiSpeaking = false;
+        llmBusy.set(false);
+    }
+
+    // VoskCallback
+    public void onReady() { Log.d("Main", "Vosk ready"); }
+    public void onPartialResult(String text) {
+        handler.post(() -> tvUserSubtitle.setText(text));
+    }
+    public void onFinalResult(String text) {
+        handler.post(() -> {
+            tvUserSubtitle.setText(text);
+            if (!text.isEmpty() && !llmBusy.get()) {
+                llmBusy.set(true);
+                voskManager.pause();
+                new Thread(() -> {
+                    String resp = llmEngine.generate(text);
+                    handler.post(() -> appendAiSubtitle(resp + "\n"));
+                    ttsManager.speak(resp);
+                }).start();
             }
-        };
-        handler.postDelayed(phraseTask, 1000);
+        });
+    }
+    public void onError(String error) { handler.post(() -> tvStatus.setText("Error: " + error)); }
+
+    // TTSListener
+    public void onSpeakStart() { aiSpeaking = true; }
+    public void onSpeakEnd() {
+        aiSpeaking = false;
+        llmBusy.set(false);
+        if (callActive) voskManager.resume();
     }
 
-    private void stopMockAudio() {
-        handler.removeCallbacksAndMessages(null);
+    private void appendAiSubtitle(String text) {
+        tvAiSubtitle.append(text);
+        scrollAi.post(() -> scrollAi.fullScroll(View.FOCUS_DOWN));
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQUEST_AUDIO) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                toggleCall();
-            } else {
-                Toast.makeText(this, "Need audio permission", Toast.LENGTH_SHORT).show();
-            }
+    public void onRequestPermissionsResult(int req, @NonNull String[] perms, @NonNull int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        if (req == REQ_AUDIO && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            toggleCall();
+        } else {
+            Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (voskManager != null) voskManager.destroy();
+        if (ttsManager != null) ttsManager.destroy();
+        if (llmEngine != null) llmEngine.destroy();
     }
 }
