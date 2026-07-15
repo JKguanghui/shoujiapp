@@ -1,8 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">英语口语教练</string>
-    <string name="start_call">开始通话</string>
-    <string name="end_call">结束通话</string>
-    <string name="download_model">下载必要资源包</string>
-    <string name="downloading">正在下载…</string>
-    <string name="model_ready">模型就绪，开始练习吧</string>
+    <string name="app_name">English Coach</string>
+    <string name="disclaimer">AI-generated content is for reference only. Do not take it as absolute truth or share private information.</string>
+    <string name="agreement_text">User Agreement &amp; Disclaimer\n\nWelcome to this English speaking practice App.\n\nI. Service Description\nThis App features an AI English tutor built on an open-source large language model. All AI inference runs entirely on your device, completely offline. This product is solely for English speaking practice.\n\nII. AI Content Disclaimer\nAI responses are generated automatically by the on-device model and do not reflect the views of the developer or any organization. Due to the limitations of on-device small models, AI may occasionally produce inaccurate or inappropriate content. Please use your judgment and do not take everything at face value.\n\nIII. Proper Use\nYou agree not to deliberately induce the AI to generate illegal, violent, pornographic, or rights-infringing content. All consequences arising from improper use are borne solely by the user. The developer assumes no responsibility.\n\nIV. Privacy Protection\nThis App runs entirely offline. Your conversation data is not uploaded to any server, nor is it collected or shared. However, please do not input sensitive personal information such as bank passwords or ID numbers.\n\nV. Minors\nIf you are a minor, please use this product under the supervision of a guardian.\n\nBy continuing to use this App, you confirm that you have read, understood, and agreed to all the above terms.</string>
 </resources>
