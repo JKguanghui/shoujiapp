@@ -1,50 +1,100 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center"
-    android:orientation="vertical"
-    android:padding="32dp">
+    android:background="#1a1a2e"
+    android:padding="24dp">
 
+    <!-- Status -->
     <TextView
-        android:id="@+id/statusText"
-        android:layout_width="wrap_content"
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="准备中..."
-        android:textSize="20sp"
-        android:layout_marginBottom="30dp"/>
-
-    <Button
-        android:id="@+id/btnDownload"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/download_model"
-        android:visibility="gone"/>
-
-    <Button
-        android:id="@+id/btnCall"
-        android:layout_width="200dp"
-        android:layout_height="200dp"
-        android:text="@string/start_call"
-        android:textSize="22sp"
-        android:backgroundTint="#4CAF50"
-        android:visibility="gone"
+        android:text="Loading..."
+        android:textColor="#aaa"
+        android:textSize="16sp"
+        android:gravity="center"
         android:layout_marginTop="20dp"/>
 
-    <TextView
-        android:id="@+id/subtitleText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text=""
-        android:textSize="18sp"
-        android:gravity="center"
-        android:layout_marginTop="30dp"/>
+    <!-- Download Button -->
+    <Button
+        android:id="@+id/btnDownload"
+        android:layout_width="200dp"
+        android:layout_height="50dp"
+        android:layout_below="@id/tvStatus"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="30dp"
+        android:text="Download Models"
+        android:visibility="gone"/>
 
+    <!-- Progress Bar -->
     <ProgressBar
         android:id="@+id/progressBar"
+        style="@android:style/Widget.ProgressBar.Horizontal"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_below="@id/btnDownload"
+        android:layout_marginTop="10dp"
         android:visibility="gone"
-        style="@style/Widget.AppCompat.ProgressBar.Horizontal"/>
+        android:max="100"/>
 
-</LinearLayout>
+    <!-- User Subtitle -->
+    <TextView
+        android:id="@+id/tvUserSubtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/progressBar"
+        android:layout_marginTop="20dp"
+        android:text=""
+        android:textColor="#4fc3f7"
+        android:textSize="18sp"
+        android:fontFamily="sans-serif-medium"
+        android:minHeight="30dp"/>
+
+    <!-- AI Subtitle Scroll -->
+    <ScrollView
+        android:id="@+id/scrollAi"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/tvUserSubtitle"
+        android:layout_above="@id/btnStart"
+        android:layout_marginTop="10dp"
+        android:background="#0d1117"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tvAiSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#e0e0e0"
+            android:textSize="16sp"
+            android:lineSpacingExtra="4dp"/>
+    </ScrollView>
+
+    <!-- Call Button -->
+    <Button
+        android:id="@+id/btnStart"
+        android:layout_width="160dp"
+        android:layout_height="160dp"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="60dp"
+        android:text="Start Call"
+        android:textSize="20sp"
+        android:textColor="#fff"
+        android:backgroundTint="#4CAF50"
+        android:visibility="gone"/>
+
+    <!-- Disclaimer -->
+    <TextView
+        android:id="@+id/tvDisclaimer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:text="@string/disclaimer"
+        android:textColor="#666"
+        android:textSize="11sp"
+        android:gravity="center"
+        android:paddingBottom="8dp"/>
+
+</RelativeLayout>
